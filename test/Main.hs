@@ -3,7 +3,7 @@ module Main (main) where
 import ConIO
 import Control.Concurrent
 import Control.Exception
-import Control.Monad (forM, forM_)
+import Control.Monad (forM)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (traverse_)
 import Data.Functor ((<&>))
@@ -17,83 +17,80 @@ main =
     testGroup
       "tests"
       [ testCase "launch & wait" $ do
-          runConIO $ do
-            t1 <- launch $ pure (4 :: Int)
-            t2 <- launch $ pure (4 :: Int)
-            val1 <- wait t1
-            val2 <- wait t2
+          multitask $ \coordinator -> do
+            t1 <- start coordinator $ pure (4 :: Int)
+            t2 <- start coordinator $ pure (4 :: Int)
+            val1 <- await t1
+            val2 <- await t2
             liftIO $ val1 @?= val2,
-        testCase "launch many tasks" $ runConIO $ do
-          counter <- newCounter
+        testCase "launch many tasks" $ multitask $ \coordinator -> do
+          counter <- newCounter 0
           tasks <- forM [1 .. 10000] $ \(_i :: Int) -> do
-            launch $ incrementCounter counter
-          traverse_ wait tasks
+            start coordinator $ incrementCounter counter
+          traverse_ await tasks
           value <- getCounter counter
           liftIO $ value @?= 10000,
-        testCase "launch really many tasks" $ runConIO $ do
-          counter <- newCounter
+        testCase "launch really many tasks" $ multitask $ \coordinator -> do
+          counter <- newCounter 0
           tasks <- forM [1 .. 100000] $ \(_i :: Int) -> do
-            launch $ incrementCounter counter
-          traverse_ wait tasks
+            start coordinator $ incrementCounter counter
+          traverse_ await tasks
           value <- getCounter counter
           liftIO $ value @?= 100000,
-        testCase "automatic wait" $ do
+        testCase "wait all" $ do
           ref <- newIORef (0 :: Int)
-          runConIO $ do
-            _ <- launch $ atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- launch $ atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- launch $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+          multitask $ \coordinator -> do
+            _ <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+            awaitAll coordinator
             pure ()
           value <- readIORef ref
           value @?= 3,
         testCase "cancel task" $ do
           ref <- newIORef (0 :: Int)
-          runConIO $ do
-            gate <- newGate
-            _ <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            t2 <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            cancel t2
-            openGate gate
+          gate <- newGate
+          multitask $ \coordinator -> do
+            t1 <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            t3 <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
+            await t1
+            await t3
             pure ()
+          openGate gate
           value <- readIORef ref
           value @?= 2,
         testCase "cancel all tasks" $ do
           ref <- newIORef (0 :: Int)
-          runConIO $ do
-            gate <- newGate
-            _ <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- launch $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            cancelAll
-            openGate gate
+          gate <- newGate
+          multitask $ \coordinator -> do
+            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
             pure ()
+          openGate gate
           value <- readIORef ref
           value @?= 0,
         testCase "wait canceled task 1" $ do
-          value <- assertConIOKillThread $ runConIO $ do
-            t1 <- launch waitForever
-            cancel t1
-            wait t1
-          pure (),
-        testCase "wait canceled task 2" $ do
-          value <- assertConIOKillThread $ runConIO $ do
-            t1 <- launch waitForever
-            cancelAll
-            wait t1
+          _ <- assertKilledThread $ do
+            t1 <- multitask $ \coordinator -> start coordinator waitForever
+            await t1
+
           pure (),
         testCase "task error propagates to scope" $ do
-          assertConIOException $ runConIO $ do
-            _ <- launch undefined
-            _ <- launch (pure ())
+          assertMultitaskException $ multitask $ \coordinator -> do
+            gate <- newGate
+            _ <- start coordinator $ undefined >> openGate gate
+            _ <- start coordinator $ (pure ())
+            waitGate gate
             pure (),
         testCase "scope exception kills task" $ do
           killedRef <- newIORef False
-          assertSomeException $ runConIO $ do
+          assertSomeException $ multitask $ \coordinator -> do
             gate <- newGate
             _ <-
-              launch $
-                catch @ConIOKillThread
+              start coordinator $
+                catch @SomeAsyncException
                   (openGate gate >> waitForever)
                   (\e -> writeIORef killedRef True >> throwIO e)
             waitGate gate
@@ -102,89 +99,75 @@ main =
           value @?= True,
         testCase "task exception kills other task" $ do
           killedRef <- newIORef False
-          assertConIOException $ runConIO $ do
+          assertMultitaskException $ multitask $ \coordinator -> do
             gate <- newGate
             _ <-
-              launch $
-                catch @ConIOKillThread
+              start coordinator $
+                catch @SomeAsyncException
                   (openGate gate >> waitForever)
                   (\e -> writeIORef killedRef True >> throwIO e)
-            _ <- launch $ waitGate gate >> fail "I die"
+            t <- start coordinator $ waitGate gate >> fail "I die"
+            () <- await t
             pure ()
           value <- readIORef killedRef
           value @?= True,
-        testCase "race 2 actions" $ runConIO $ do
+        testCase "race 2 actions" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          t <- raceTwo (waitGate gate1 >> pure 1) (waitGate gate2 >> pure 2)
+          task :: Task Int <- start coordinator $ raceTwo (waitGate gate1 >> pure 1) (waitGate gate2 >> pure 2)
           openGate gate2
-          value <- wait t
+          value <- await task
           liftIO $ value @?= 2,
-        testCase "race many actions" $ runConIO $ do
+        testCase "race many actions" $ multitask $ \coordinator -> do
           condition <- newVariable (-1)
           task <-
-            raceMany $
-              [0 .. 10000] <&> \(i :: Int) -> do
-                waitVariable (== i) condition >> pure i
+            start coordinator $
+              raceMany $
+                [0 .. 10000] <&> \(i :: Int) -> do
+                  waitVariable (== i) condition >> pure i
           writeVariable condition 5000
-          value <- wait task
+          value <- await task
           liftIO $ value @?= 5000,
-        testCase "race 2 tasks" $ runConIO $ do
+        testCase "race 2 tasks" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          t1 <- launch $ waitGate gate1 >> pure 1
-          t2 <- launch $ waitGate gate2 >> pure 2
-          t3 <- raceTwoTasks t1 t2
+          t1 <- start coordinator $ waitGate gate1 >> pure 1
+          t2 <- start coordinator $ waitGate gate2 >> pure 2
+          t3 :: Task Int <- start coordinator $ raceTwo (await t1) (await t2)
           openGate gate2
-          value <- wait t3
+          value <- await t3
           liftIO $ value @?= 2,
-        testCase "race with finished task" $ runConIO $ do
+        testCase "race with finished task" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          t1 <- launch $ waitGate gate1 >> pure 1
-          t2 <- launch $ waitGate gate2 >> pure 2
+          t1 <- start coordinator $ waitGate gate1 >> pure (1 :: Int)
+          t2 <- start coordinator $ waitGate gate2 >> pure (2 :: Int)
           openGate gate2
-          _ <- wait t2
-          t3 <- raceTwoTasks t1 t2
-          value <- wait t3
+          _ <- await t2
+          t3 <- start coordinator $ raceTwo (await t1) (await t2)
+          value <- await t3
           liftIO $ value @?= 2,
-        testCase "race many tasks" $ runConIO $ do
-          condition <- newVariable (-1)
-          tasks <- forM [0 .. 10000] $ \(i :: Int) -> do
-            launch $ waitVariable (== i) condition >> pure i
-          task <- raceManyTasks tasks
-          writeVariable condition 5000
-          value <- wait task
-          liftIO $ value @?= 5000,
-        testCase "raceMaybe 2 tasks 1" $ runConIO $ do
+        testCase "raceMaybe 2 tasks 1" $ do
           result <- raceTwoMaybe (pure Nothing) (threadDelay 100 >> pure (Just ()))
-          value <- wait result
-          liftIO $ value @?= Just (),
-        testCase "raceMaybe 2 tasks 2" $ runConIO $ do
-          task <- raceTwoMaybe (pure (Just ())) (threadDelay 100 >> pure Nothing)
-          value <- wait task
-          liftIO $ value @?= Just (),
-        testCase "raceMaybe 2 tasks 3" $ runConIO $ do
-          task :: Task (Maybe ()) <- raceTwoMaybe (pure Nothing) (threadDelay 100 >> pure Nothing)
-          value <- wait task
-          liftIO $ value @?= Nothing,
-        testCase "raceMaybe many tasks" $ runConIO $ do
-          task :: Task (Maybe ()) <- raceManyMaybe [pure Nothing, threadDelay 100 >> pure Nothing]
-          value <- wait task
-          liftIO $ value @?= Nothing,
-        testCase "raceMaybe many tasks" $ runConIO $ do
-          task <- raceManyMaybe [pure Nothing, threadDelay 100 >> pure (Just ())]
-          value <- wait task
-          liftIO $ value @?= Just (),
-        testCase "raceMaybe many tasks" $ runConIO $ do
-          task <- raceManyMaybe [pure (Just ()), threadDelay 10000 >> pure undefined]
-          value <- wait task
-          liftIO $ value @?= Just (),
-        testCase "timeout task" $ runConIO $ do
-          task :: Task () <- launch waitForever
-          timedTask <- timeoutTask (fromMilliseconds 10) task
-          value <- wait timedTask
-          liftIO $ value @?= Nothing
+          liftIO $ result @?= Just (),
+        testCase "raceMaybe 2 tasks 2" $ do
+          result <- raceTwoMaybe (pure (Just ())) (threadDelay 100 >> pure Nothing)
+          liftIO $ result @?= Just (),
+        testCase "raceMaybe 2 tasks 3" $ do
+          result :: Maybe Int <- raceTwoMaybe (pure Nothing) (threadDelay 100 >> pure Nothing)
+          liftIO $ result @?= Nothing,
+        testCase "raceMaybe many tasks" $ do
+          result :: Maybe Int <- raceManyMaybe [pure Nothing, threadDelay 100 >> pure Nothing]
+          liftIO $ result @?= Nothing,
+        testCase "raceMaybe many tasks" $ do
+          result <- raceManyMaybe [pure Nothing, threadDelay 100 >> pure (Just ())]
+          liftIO $ result @?= Just (),
+        testCase "raceMaybe many tasks" $ do
+          result <- raceManyMaybe [pure (Just ()), threadDelay 10000 >> pure undefined]
+          liftIO $ result @?= Just (),
+        testCase "timeout" $ do
+          result :: Maybe Int <- timeout (fromMilliseconds 10) waitForever
+          liftIO $ result @?= Nothing
       ]
 
 assertSomeException :: IO a -> IO ()
@@ -194,16 +177,16 @@ assertSomeException action = do
     Left _ -> return ()
     Right _ -> assertFailure "Expected SomeException, but none thrown"
 
-assertConIOKillThread :: IO a -> IO ()
-assertConIOKillThread action = do
-  result <- try @ConIOKillThread action
+assertKilledThread :: IO a -> IO ()
+assertKilledThread action = do
+  result <- try @SomeAsyncException action
   case result of
     Left _ -> return ()
     Right _ -> assertFailure "Expected ConIOKillThread, but none thrown"
 
-assertConIOException :: IO a -> IO ()
-assertConIOException action = do
-  result <- try @ConIOException action
+assertMultitaskException :: IO a -> IO ()
+assertMultitaskException action = do
+  result <- try @SomeException action
   case result of
     Left _ -> return ()
     Right _ -> assertFailure "Expected ConIOException, but none thrown"

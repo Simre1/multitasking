@@ -20,16 +20,23 @@ module ConIO.Communication
     writeVariable,
     getVariable,
 
+    -- ** Option
+    Option (..),
+    newOption,
+    newEmptyOption,
+    takeOption,
+    tryTakeOption,
+    readOption,
+    tryReadOption,
+    putOption,
+    tryPutOption,
+
     -- ** Slot
     Slot (..),
     newSlot,
-    newEmptySlot,
-    takeSlot,
-    tryTakeSlot,
-    readSlot,
+    fillSlot,
+    waitSlot,
     tryReadSlot,
-    putSlot,
-    tryPutSlot,
 
     -- ** Counter
     Counter (..),
@@ -139,8 +146,8 @@ getVariable (Variable tVar) = liftSTM $ readTVar tVar
 -- | A 'Counter' stores an int.
 newtype Counter = Counter (TVar Int)
 
-newCounter :: (MonadSTM m) => m Counter
-newCounter = Counter <$> liftSTM_IO (newTVar 0) (newTVarIO 0)
+newCounter :: (MonadSTM m) => Int -> m Counter
+newCounter initial = Counter <$> liftSTM_IO (newTVar initial) (newTVarIO initial)
 
 -- | Get the current value of the 'Counter'.
 getCounter :: (MonadSTM m) => Counter -> m Int
@@ -158,45 +165,45 @@ incrementCounter (Counter tVar) = liftSTM $ modifyTVar' tVar succ
 decrementCounter :: (MonadSTM m) => Counter -> m ()
 decrementCounter (Counter tVar) = liftSTM $ modifyTVar' tVar pred
 
--- | A 'Slot' is either empty or contains an `a`.
-newtype Slot a = Slot (TMVar a)
+-- | A 'Option' is either empty or contains an `a`.
+newtype Option a = Option (TMVar a)
 
--- | Creates a new 'Slot' filled with `a`.
-newSlot :: (MonadSTM m) => a -> m (Slot a)
-newSlot a = Slot <$> liftSTM_IO (newTMVar a) (newTMVarIO a)
+-- | Creates a new 'Option' filled with `a`.
+newOption :: (MonadSTM m) => a -> m (Option a)
+newOption a = Option <$> liftSTM_IO (newTMVar a) (newTMVarIO a)
 
--- | Creates a new empty 'Slot'.
-newEmptySlot :: (MonadSTM m) => m (Slot a)
-newEmptySlot = Slot <$> liftSTM_IO newEmptyTMVar newEmptyTMVarIO
+-- | Creates a new empty 'Option'.
+newEmptyOption :: (MonadSTM m) => m (Option a)
+newEmptyOption = Option <$> liftSTM_IO newEmptyTMVar newEmptyTMVarIO
 
--- | Takes the element from the 'Slot'. Waits if there is no element.
--- Afterwards, the 'Slot' is empty.
-takeSlot :: (MonadSTM m) => Slot a -> m a
-takeSlot (Slot var) = liftSTM (takeTMVar var)
+-- | Takes the element from the 'Option'. Waits if there is no element.
+-- Afterwards, the 'Option' is empty.
+takeOption :: (MonadSTM m) => Option a -> m a
+takeOption (Option var) = liftSTM (takeTMVar var)
 
--- | Tries to take the element from the 'Slot'. Does not wait for the 'Slot' to be filled.
--- Afterwards, the 'Slot' is empty.
-tryTakeSlot :: (MonadSTM m) => Slot a -> m (Maybe a)
-tryTakeSlot (Slot var) = liftSTM (tryTakeTMVar var)
+-- | Tries to take the element from the 'Option'. Does not wait for the 'Option' to be filled.
+-- Afterwards, the 'Option' is empty.
+tryTakeOption :: (MonadSTM m) => Option a -> m (Maybe a)
+tryTakeOption (Option var) = liftSTM (tryTakeTMVar var)
 
--- | Reads the element from the 'Slot'. Waits if there is no element.
--- Afterwards, the 'Slot' is __not__ empty.
-readSlot :: (MonadSTM m) => Slot a -> m a
-readSlot (Slot var) = liftSTM (readTMVar var)
+-- | Reads the element from the 'Option'. Waits if there is no element.
+-- Afterwards, the 'Option' is __not__ empty.
+readOption :: (MonadSTM m) => Option a -> m a
+readOption (Option var) = liftSTM (readTMVar var)
 
--- | Tries to read the element from the 'Slot'. Does not wait for the 'Slot' to be filled.
--- Afterwards, the 'Slot' is __not__ empty.
-tryReadSlot :: (MonadSTM m) => Slot a -> m (Maybe a)
-tryReadSlot (Slot var) = liftSTM (tryReadTMVar var)
+-- | Tries to read the element from the 'Option'. Does not wait for the 'Option' to be filled.
+-- Afterwards, the 'Option' is __not__ empty.
+tryReadOption :: (MonadSTM m) => Option a -> m (Maybe a)
+tryReadOption (Option var) = liftSTM (tryReadTMVar var)
 
--- | Puts an element into the slot if there is space. Waits until the 'Slot' is empty to fill it.
-putSlot :: (MonadSTM m) => Slot a -> a -> m ()
-putSlot (Slot var) a = liftSTM (putTMVar var a)
+-- | Puts an element into the slot if there is space. Waits until the 'Option' is empty to fill it.
+putOption :: (MonadSTM m) => Option a -> a -> m ()
+putOption (Option var) a = liftSTM (putTMVar var a)
 
--- | Tries to put an element into the 'Slot' if there is space.
+-- | Tries to put an element into the 'Option' if there is space.
 -- Returns whether the putting was successful.
-tryPutSlot :: (MonadSTM m) => Slot a -> a -> m Bool
-tryPutSlot (Slot var) a = liftSTM (tryPutTMVar var a)
+tryPutOption :: (MonadSTM m) => Option a -> a -> m Bool
+tryPutOption (Option var) a = liftSTM (tryPutTMVar var a)
 
 -- | A 'Queue' holds zero or more values.
 newtype Queue a = Queue (TChan a)
@@ -258,3 +265,17 @@ newSink = Sink
 
 writeSink :: (MonadSTM m) => Sink a -> a -> m ()
 writeSink (Sink f) a = liftSTM $ f a
+
+newtype Slot a = Slot (TMVar a)
+
+newSlot :: (MonadSTM m) => m (Slot a)
+newSlot = Slot <$> liftSTM_IO newEmptyTMVar newEmptyTMVarIO
+
+fillSlot :: (MonadSTM m) => Slot a -> a -> m Bool
+fillSlot (Slot var) a = liftSTM $ tryPutTMVar var a
+
+waitSlot :: (MonadSTM m) => Slot a -> m a
+waitSlot (Slot var) = liftSTM $ readTMVar var
+
+tryReadSlot :: (MonadSTM m) => Slot a -> m (Maybe a)
+tryReadSlot (Slot var) = liftSTM $ tryReadTMVar var

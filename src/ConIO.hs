@@ -74,3 +74,12 @@ import ConIO.Core as Core
 import ConIO.MonadSTM as MonadSTM
 import ConIO.Race as Race
 import ConIO.Workers as Workers
+import Control.Concurrent.STM
+import Control.Monad
+import GHC.Conc (unsafeIOToSTM)
+
+-- mytest :: IO ()
+-- myTest = multitask $ \coordinator -> do
+--   _ <- start coordinator undefined
+--   _ <- start coordinator (pure ())
+--   pure ()

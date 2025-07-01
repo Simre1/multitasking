@@ -27,11 +27,13 @@ common common
         TypeFamilies
         DuplicateRecordFields
         NoFieldSelectors
+        DataKinds
     build-depends:
         base ^>=4.20.0.0,
         containers >= 0.7 && < 0.8,
         stm >= 2.5.3 && < 2.6,
-        transformers >= 0.6.1 && < 0.7
+        transformers >= 0.6.1 && < 0.7,
+        ki
 
 library
     import:           common
