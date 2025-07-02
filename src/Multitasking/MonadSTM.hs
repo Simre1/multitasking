@@ -1,4 +1,4 @@
-module ConIO.MonadSTM (MonadSTM (..)) where
+module Multitasking.MonadSTM (MonadSTM (..)) where
 
 import Control.Concurrent.STM
 import Control.Monad.Trans.Class

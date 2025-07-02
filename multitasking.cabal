@@ -1,8 +1,8 @@
 cabal-version:      3.0
-name:               conio
+name:               multitasking
 version:            0.0.0.1
 synopsis:           A structured concurrency library
-description:        `conio` aims to simplify concurrency in Haskell, providing an easy way to spawn threads with sane defaults. It uses structured concurrency to control the lifetime of threads. 
+description:        `multitasking` aims to simplify concurrency in Haskell, providing an easy way to spawn threads with sane defaults. It uses structured concurrency to control the lifetime of threads. 
 license:            BSD-3-Clause
 license-file:       LICENSE
 author:             Simon Reitinger
@@ -14,7 +14,7 @@ extra-source-files: README.md
 
 source-repository head
   type:     git
-  location: https://github.com/Simre1/conio
+  location: https://github.com/Simre1/multitasking
 
 common common
     ghc-options: -Wall
@@ -30,23 +30,23 @@ common common
         DataKinds
     build-depends:
         base ^>=4.20.0.0,
-        containers >= 0.7 && < 0.8,
         stm >= 2.5.3 && < 2.6,
-        transformers >= 0.6.1 && < 0.7,
-        ki
+        transformers >= 0.6 && < 0.7,
+        ki >= 1.0 && < 1.1
 
 library
     import:           common
     exposed-modules:
-        ConIO
-        ConIO.Core
-        ConIO.Race
-        ConIO.Communication
-        ConIO.MonadSTM
-        ConIO.Workers
+        Multitasking
+        Multitasking.Core
+        Multitasking.AsyncOperations
+        Multitasking.Race
+        Multitasking.Communication
+        Multitasking.MonadSTM
+        Multitasking.Workers
     hs-source-dirs:   src
 
-test-suite conio-test
+test-suite multitasking-test
     import:           common
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
@@ -54,4 +54,4 @@ test-suite conio-test
     build-depends:
         tasty,
         tasty-hunit,
-        conio
+        multitasking

@@ -1,6 +1,5 @@
 module Main (main) where
 
-import ConIO
 import Control.Concurrent
 import Control.Exception
 import Control.Monad (forM)
@@ -8,6 +7,7 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (traverse_)
 import Data.Functor ((<&>))
 import Data.IORef
+import Multitasking
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -52,7 +52,7 @@ main =
           gate <- newGate
           multitask $ \coordinator -> do
             t1 <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ awaitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
             t3 <- start coordinator $ atomicModifyIORef' ref (\a -> (a + 1, ()))
             await t1
             await t3
@@ -64,9 +64,9 @@ main =
           ref <- newIORef (0 :: Int)
           gate <- newGate
           multitask $ \coordinator -> do
-            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
-            _ <- start coordinator $ waitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ awaitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ awaitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
+            _ <- start coordinator $ awaitGate gate >> atomicModifyIORef' ref (\a -> (a + 1, ()))
             pure ()
           openGate gate
           value <- readIORef ref
@@ -82,7 +82,7 @@ main =
             gate <- newGate
             _ <- start coordinator $ undefined >> openGate gate
             _ <- start coordinator $ (pure ())
-            waitGate gate
+            awaitGate gate
             pure (),
         testCase "scope exception kills task" $ do
           killedRef <- newIORef False
@@ -93,7 +93,7 @@ main =
                 catch @SomeAsyncException
                   (openGate gate >> waitForever)
                   (\e -> writeIORef killedRef True >> throwIO e)
-            waitGate gate
+            awaitGate gate
             fail "I die"
           value <- readIORef killedRef
           value @?= True,
@@ -106,7 +106,7 @@ main =
                 catch @SomeAsyncException
                   (openGate gate >> waitForever)
                   (\e -> writeIORef killedRef True >> throwIO e)
-            t <- start coordinator $ waitGate gate >> fail "I die"
+            t <- start coordinator $ awaitGate gate >> fail "I die"
             () <- await t
             pure ()
           value <- readIORef killedRef
@@ -114,25 +114,25 @@ main =
         testCase "race 2 actions" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          task :: Task Int <- start coordinator $ raceTwo (waitGate gate1 >> pure 1) (waitGate gate2 >> pure 2)
+          task :: Task Int <- start coordinator $ raceTwo (awaitGate gate1 >> pure 1) (awaitGate gate2 >> pure 2)
           openGate gate2
           value <- await task
           liftIO $ value @?= 2,
         testCase "race many actions" $ multitask $ \coordinator -> do
-          condition <- newVariable (-1)
+          var <- newVariable (-1)
           task <-
             start coordinator $
               raceMany $
                 [0 .. 10000] <&> \(i :: Int) -> do
-                  waitVariable (== i) condition >> pure i
-          writeVariable condition 5000
+                  awaitCondition (newCondition (== i) (readVariable var)) >> pure i
+          writeVariable var 5000
           value <- await task
           liftIO $ value @?= 5000,
         testCase "race 2 tasks" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          t1 <- start coordinator $ waitGate gate1 >> pure 1
-          t2 <- start coordinator $ waitGate gate2 >> pure 2
+          t1 <- start coordinator $ awaitGate gate1 >> pure 1
+          t2 <- start coordinator $ awaitGate gate2 >> pure 2
           t3 :: Task Int <- start coordinator $ raceTwo (await t1) (await t2)
           openGate gate2
           value <- await t3
@@ -140,8 +140,8 @@ main =
         testCase "race with finished task" $ multitask $ \coordinator -> do
           gate1 <- newGate
           gate2 <- newGate
-          t1 <- start coordinator $ waitGate gate1 >> pure (1 :: Int)
-          t2 <- start coordinator $ waitGate gate2 >> pure (2 :: Int)
+          t1 <- start coordinator $ awaitGate gate1 >> pure (1 :: Int)
+          t2 <- start coordinator $ awaitGate gate2 >> pure (2 :: Int)
           openGate gate2
           _ <- await t2
           t3 <- start coordinator $ raceTwo (await t1) (await t2)
@@ -182,11 +182,11 @@ assertKilledThread action = do
   result <- try @SomeAsyncException action
   case result of
     Left _ -> return ()
-    Right _ -> assertFailure "Expected ConIOKillThread, but none thrown"
+    Right _ -> assertFailure "Expected a killed thread, but not killed"
 
 assertMultitaskException :: IO a -> IO ()
 assertMultitaskException action = do
   result <- try @SomeException action
   case result of
     Left _ -> return ()
-    Right _ -> assertFailure "Expected ConIOException, but none thrown"
+    Right _ -> assertFailure "Expected an exception, but none thrown"

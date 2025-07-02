@@ -1,6 +1,6 @@
 {-# LANGUAGE RecursiveDo #-}
 
-module ConIO.Race
+module Multitasking.Race
   ( -- ** Race
     raceTwo,
     raceTwoMaybe,
@@ -23,21 +23,21 @@ module ConIO.Race
   )
 where
 
-import ConIO.Communication
-import ConIO.Core
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad (forever, void)
 import Control.Monad.IO.Class
 import Data.Foldable (for_)
+import Multitasking.Communication
+import Multitasking.Core
 
 -- | Race two actions. The slower is canceled.
 raceTwo :: (MonadIO m) => IO a -> IO a -> m a
 raceTwo action1 action2 = multitask $ \inner -> do
   slot <- newSlot
-  _ <- start inner $ action1 >>= fillSlot slot
-  _ <- start inner $ action2 >>= fillSlot slot
-  waitSlot slot
+  _ <- start inner $ action1 >>= putSlot slot
+  _ <- start inner $ action2 >>= putSlot slot
+  awaitSlot slot
 
 -- | Race two actions which may produce results. The slower is canceled.
 raceTwoMaybe :: (MonadIO m) => IO (Maybe a) -> IO (Maybe a) -> m (Maybe a)
@@ -47,8 +47,8 @@ raceTwoMaybe action1 action2 = raceManyMaybe [action1, action2]
 raceMany :: (MonadIO m, Traversable t) => t (IO a) -> m a
 raceMany actions = multitask $ \inner -> do
   slot <- newSlot
-  for_ actions $ \action -> start inner $ action >>= fillSlot slot
-  waitSlot slot
+  for_ actions $ \action -> start inner $ action >>= putSlot slot
+  awaitSlot slot
 
 -- | Race many actions. The slower ones are canceled.
 -- If no actions produce a result, then the resulting task will also produce nothing.
@@ -61,10 +61,10 @@ raceManyMaybe actions = multitask $ \coordinator -> do
     decrementCounter counter
     case maybeA of
       Nothing -> pure ()
-      Just a -> void $ fillSlot slot a
+      Just a -> void $ putSlot slot a
 
   atomically $ do
-    maybeA <- tryReadSlot slot
+    maybeA <- probeSlot slot
     case maybeA of
       Just a -> pure $ Just a
       Nothing -> do

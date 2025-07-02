@@ -1,47 +1,22 @@
-module ConIO.Core where
+{-# LANGUAGE DefaultSignatures #-}
 
--- ( -- ** Concurrent IO
---   ConIO,
---   runConIO,
---   runConIOCancel,
+module Multitasking.Core
+  ( -- ** Concurrency scopes
+    multitask,
+    Coordinator,
 
---   -- ** Task
---   Task,
---   launch,
---   AsyncThread (..),
---   cancelAll,
+    -- ** Task
+    Task (..),
+    start,
+    awaitTask,
+    awaitAll,
+  )
+where
 
---   -- ** Manage scopes
---   ConScope,
---   withConScope,
---   useConScope,
---   UnsafeConScope,
---   toUnsafeConScope,
---   fromUnsafeConScope,
-
---   -- ** Exceptions
---   ConIOException (..),
---   ConIOKillThread (..),
-
---   -- ** Internal
---   Task (..),
--- )
-
-import ConIO.MonadSTM
-import Control.Concurrent
-import Control.Concurrent.STM
-import Control.Exception
-import Control.Monad (void)
-import Control.Monad.Fix
 import Control.Monad.IO.Class
-import Control.Monad.Trans.Reader
-import Data.Foldable (traverse_)
-import Data.IORef
-import Data.Map qualified as M
-import Data.Maybe (fromMaybe)
-import Data.Set qualified as S
-import GHC.Records (HasField (..))
 import Ki qualified
+import Multitasking.AsyncOperations
+import Multitasking.MonadSTM
 
 -- | Coordinator keeps track of child processes
 newtype Coordinator = Coordinator Ki.Scope
@@ -70,16 +45,16 @@ start (Coordinator scope) action = do
 instance Functor Task where
   fmap f (Task t) = Task (fmap f t)
 
+awaitTask :: (MonadSTM m) => Task a -> m a
+awaitTask (Task thread) = liftSTM $ Ki.await thread
+
 awaitAll :: (MonadSTM m) => Coordinator -> m ()
 awaitAll (Coordinator scope) = liftSTM (Ki.awaitAll scope)
 
--- | A typeclass for all async workers which you can wait for.
-class AsyncThread t where
-  type Payload t
-
-  -- | Wait for an async worker and return its payload.
-  await :: (MonadSTM m) => t -> m (Payload t)
-
-instance AsyncThread (Task a) where
+instance Await (Task a) where
   type Payload (Task a) = a
-  await (Task thread) = liftSTM $ Ki.await thread
+  await = awaitTask
+
+instance Await Coordinator where
+  type Payload Coordinator = ()
+  await = awaitAll
