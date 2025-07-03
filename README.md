@@ -5,15 +5,15 @@ Haskell has great tools for dealing with concurrency. However, in praxis they ar
 This library aims to make concurrency easy by providing many built-in solutions for common concurrency patterns.
 It is based on [structured concurrency](https://vorpus.org/blog/notes-on-structured-concurrency-or-go-statement-considered-harmful), not letting threads outlive their parent scope. Additionally, exceptions are propagated automatically. This means that you do not have to worry about:
 
-- Zombie processes, since a thread can never outlive its parent scope.
+- Ghost processes, since a thread can never outlive its parent scope.
 - Dead processes, since exceptions will propagate to the parent thread.
 
 
 ## Examples
 
 ```haskell
-awaitAll :: IO ()
-awaitAll =
+awaitAllExample :: IO ()
+awaitAllExample =
   -- open up a concurrency scope
   multitask $ \coordinator -> do
     -- launch tasks
@@ -24,8 +24,8 @@ awaitAll =
 ```
 
 ```haskell
-awaitTask :: IO ()
-awaitTask =
+awaitTaskExample :: IO ()
+awaitTaskExample =
   -- open up a concurrency scope
   multitask $ \coordinator -> do
     -- start task
@@ -42,8 +42,8 @@ awaitTask =
 ```
 
 ```haskell
-raceTasks :: IO ()
-raceTasks = multitask $ \coordinator ->
+raceTasksExample :: IO ()
+raceTasksExample = multitask $ \coordinator ->
   slot <- newSlot
   _ <- start coordinator $ action1 >>= putSlot slot
   _ <- start coordinator $ action2 >>= putSlot slot
@@ -52,15 +52,15 @@ raceTasks = multitask $ \coordinator ->
 ```
 
 ```haskell
-builtinRace :: IO ()
-builtinRace = do
+builtinRaceExample :: IO ()
+builtinRaceExample = do
     result <- raceTwo (threadDelay 1000000 >> pure 10) (pure 20)
     print result
 ```
 
 ## Comparison with other libraries
 
-- `ki`: Implements structured concurrency, but provides no high-level functionality. `multitasking` uses `ki` internally and provides high-level functionality. 
+- `ki`: Implements structured concurrency, but provides no high-level functionality. `multitasking` uses `ki` internally and additionally implements commonly used patterns. 
 - `async`: Does not implement structured concurrency
 
 ## Acknowledgements

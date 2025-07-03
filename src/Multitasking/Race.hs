@@ -9,17 +9,6 @@ module Multitasking.Race
 
     -- ** Timeout
     timeout,
-
-    -- ** Waiting
-    waitDuration,
-    waitForever,
-
-    -- ** Duration
-    Duration,
-    fromSeconds,
-    fromMilliseconds,
-    fromMicroseconds,
-    durationToMicroseconds,
   )
 where
 
@@ -30,6 +19,7 @@ import Control.Monad.IO.Class
 import Data.Foldable (for_)
 import Multitasking.Communication
 import Multitasking.Core
+import Multitasking.Waiting
 
 -- | Race two actions. The slower is canceled.
 raceTwo :: (MonadIO m) => IO a -> IO a -> m a
@@ -79,30 +69,3 @@ timeout duration action =
   raceTwo (Just <$> action) (threadDelay maxWaitTime >> pure Nothing)
   where
     maxWaitTime = fromIntegral $ durationToMicroseconds duration
-
--- | Waits forever
-waitDuration :: (MonadIO m) => Duration -> m ()
-waitDuration duration = liftIO $ threadDelay $ fromIntegral $ durationToMicroseconds duration
-
--- | Waits forever
-waitForever :: (MonadIO m) => m a
-waitForever = liftIO $ forever (threadDelay maxBound)
-
--- | 'Duration' is a time span. It is used for waiting and timeouts.
-newtype Duration = Duration Word deriving (Show, Eq, Ord, Num)
-
--- | Create a 'Duration' from seconds
-fromSeconds :: Word -> Duration
-fromSeconds w = Duration $ w * 1000000
-
--- | Create a 'Duration' from milliseconds
-fromMilliseconds :: Word -> Duration
-fromMilliseconds w = Duration $ w * 1000
-
--- | Create a 'Duration' from microseconds
-fromMicroseconds :: Word -> Duration
-fromMicroseconds w = Duration w
-
--- Get the 'Duration' in microseconds.
-durationToMicroseconds :: Duration -> Word
-durationToMicroseconds (Duration w) = w

@@ -43,6 +43,8 @@ library
         Multitasking.Race
         Multitasking.Communication
         Multitasking.MonadSTM
+        Multitasking.Throttle
+        Multitasking.Waiting
         Multitasking.Workers
     hs-source-dirs:   src
 
