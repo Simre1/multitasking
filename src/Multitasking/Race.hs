@@ -21,7 +21,7 @@ import Multitasking.Communication
 import Multitasking.Core
 import Multitasking.Waiting
 
--- | Race two actions. The slower is canceled.
+-- | Race two actions. The slower one is canceled.
 raceTwo :: (MonadIO m) => IO a -> IO a -> m a
 raceTwo action1 action2 = multitask $ \inner -> do
   slot <- newSlot
@@ -29,7 +29,7 @@ raceTwo action1 action2 = multitask $ \inner -> do
   _ <- start inner $ action2 >>= putSlot slot
   awaitSlot slot
 
--- | Race two actions which may produce results. The slower is canceled.
+-- | Race two actions which may produce results. The slower one is canceled.
 raceTwoMaybe :: (MonadIO m) => IO (Maybe a) -> IO (Maybe a) -> m (Maybe a)
 raceTwoMaybe action1 action2 = raceManyMaybe [action1, action2]
 

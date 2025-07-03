@@ -2,6 +2,7 @@ module Main (main) where
 
 import Control.Concurrent
 import Control.Exception
+import Control.Monad
 import Control.Monad (forM)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Foldable (traverse_)
@@ -167,7 +168,27 @@ main =
           liftIO $ result @?= Just (),
         testCase "timeout" $ do
           result :: Maybe Int <- timeout (fromMilliseconds 10) waitForever
-          liftIO $ result @?= Nothing
+          liftIO $ result @?= Nothing,
+        testCase "max concurrency" $ multitask $ \coordinator -> do
+          limit <- maxConcurrentTasks 3
+          counter <- newCounter 0
+          forM_ [0 .. 100] $ \i ->
+            start coordinator $
+              throttle limit $
+                incrementCounter counter *> waitDuration (fromMilliseconds 10)
+          waitDuration (fromMilliseconds 15)
+          result <- getCounter counter
+          liftIO $ result @?= 6,
+        testCase "token bucket" $ multitask $ \coordinator -> do
+          limit <- tokenBucket coordinator (fromMilliseconds 3) 3
+          counter <- newCounter 0
+          forM_ [0 .. 100] $ \i ->
+            start coordinator $
+              throttle limit $
+                incrementCounter counter
+          waitDuration (fromMilliseconds 13)
+          result <- getCounter counter
+          liftIO $ result @?= 7
       ]
 
 assertSomeException :: IO a -> IO ()
