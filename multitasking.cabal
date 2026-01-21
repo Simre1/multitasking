@@ -1,0 +1,44 @@
+cabal-version:      3.0
+name:               multitasking
+version:            0.1.0.0
+-- synopsis:
+-- description:
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             simon
+maintainer:         simre4775@gmail.com
+-- copyright:
+category:           Concurrency
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+-- extra-source-files:
+
+common common
+    ghc-options: -Wall
+    default-language: GHC2024
+    build-depends:    base ^>=4.21.0.0
+
+library
+    import:           common
+    exposed-modules:
+        Multitasking.Task
+    build-depends:
+        transformers,
+        text,
+        containers,
+        ki,
+        stm,
+        unagi-chan
+    -- other-modules:
+    -- other-extensions:
+    hs-source-dirs:   src
+
+test-suite multitasking-test
+    import:           common
+    -- other-modules:
+    -- other-extensions:
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          Main.hs
+    build-depends:
+        multitasking
