@@ -16,20 +16,24 @@ extra-doc-files:    CHANGELOG.md
 common common
     ghc-options: -Wall
     default-language: GHC2024
-    build-depends:    base ^>=4.21.0.0
+    build-depends:
+        base ^>=4.21.0.0,
+        stm
 
 library
-    import:           common
+    import: common
     exposed-modules:
-        Multitasking.Task
+        Control.Concurrent.Multitasking
+        Control.Concurrent.Multitasking.Task
+        Control.Concurrent.Multitasking.Communication
+    other-modules:
+        Control.Concurrent.Multitasking.Coordinator
     build-depends:
         transformers,
         text,
         containers,
-        ki,
-        stm,
-        unagi-chan
-    -- other-modules:
+        unliftio,
+        ki-unlifted
     -- other-extensions:
     hs-source-dirs:   src
 
@@ -41,4 +45,7 @@ test-suite multitasking-test
     hs-source-dirs:   test
     main-is:          Main.hs
     build-depends:
-        multitasking
+        multitasking,
+        tasty,
+        tasty-bench,
+        tasty-hunit
